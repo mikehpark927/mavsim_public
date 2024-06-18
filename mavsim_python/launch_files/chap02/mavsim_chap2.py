@@ -21,7 +21,7 @@ import time
 
 # #quitter = QuitListener()
 state = MsgState()
-viewers = ViewManager(mav=True, 
+viewers = ViewManager(animation=True, 
                       video=False, video_name='chap2.mp4')
 
 # initialize the simulation time
