@@ -25,7 +25,7 @@ import time
 # initialize elements of the architecture
 mav = MavDynamics(SIM.ts_simulation)
 delta = MsgDelta()
-viewers = ViewManager(mav=True, 
+viewers = ViewManager(animation=True, 
                       data=True,
                       video=False, video_name='chap3.mp4')
 
