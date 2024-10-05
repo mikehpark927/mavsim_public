@@ -161,7 +161,6 @@ class MavDynamics:
         p_dot = arr7 + arr8
 
         # collect the derivative of the states
-        print(pos_dot.item(0))
         x_dot = np.array([[pos_dot.item(0), 
                         pos_dot.item(1), 
                         pos_dot.item(2), 
@@ -175,7 +174,6 @@ class MavDynamics:
                         p_dot.item(0), 
                         p_dot.item(1), 
                         p_dot.item(2)]]).T
-        print(x_dot)
         return x_dot
 
     def _update_true_state(self):
