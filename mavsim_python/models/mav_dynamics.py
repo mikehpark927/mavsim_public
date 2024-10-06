@@ -44,24 +44,6 @@ class MavDynamics:
         # initialize true_state message
         self.true_state = MsgState()
 
-        # initialize physical parameters
-        self.mass = 11.0  # kg
-        self.Jx = 0.824  # kg-m^2
-        self.Jy = 1.135  # kg-m^2
-        self.Jz = 1.759  # kg-m^2
-        self.Jxz = 0.120  # kg-m^2
-
-        tau = self.Jx*self.Jz - self.Jxz**2
-        self.T1 = (1/tau)*self.Jxz*(self.Jx-self.Jy+self.Jz)
-        self.T2 = (1/tau)*self.Jz*(self.Jz-self.Jy)+self.Jxz**2
-        self.T3 = self.Jz/tau
-        self.T4 = self.Jxz/tau
-        self.T5 = (self.Jz - self.Jx)/self.Jy
-        self.T6 = self.Jxz/self.Jy
-        self.T7 = (1/tau)*(self.Jx - self.Jy)*self.Jx + self.Jxz**2
-        self.T8 = self.Jx/tau
-
-
     ###################################
     # public functions
     def update(self, forces_moments):
@@ -106,10 +88,10 @@ class MavDynamics:
         """
         ##### TODO #####
         
-        # Extract the States
-        north = state.item(0)
-        east = state.item(1)
-        down = state.item(2)
+        # extract the states
+        pn = state.item(0)
+        pe = state.item(1)
+        pd = state.item(2)
         u = state.item(3)
         v = state.item(4)
         w = state.item(5)
@@ -117,63 +99,46 @@ class MavDynamics:
         e1 = state.item(7)
         e2 = state.item(8)
         e3 = state.item(9)
-        p = state.item(9)
-        q = state.item(10)
-        r = state.item(11)
-
-        # Extract Forces/Moments
+        p = state.item(10)
+        q = state.item(11)
+        r = state.item(12)
+        #   extract forces/moments
         fx = forces_moments.item(0)
         fy = forces_moments.item(1)
         fz = forces_moments.item(2)
-        Mx = forces_moments.item(3)
-        My = forces_moments.item(4)
-        Mz = forces_moments.item(5)
+        l = forces_moments.item(3)
+        m = forces_moments.item(4)
+        n = forces_moments.item(5)
 
-        # Position Kinematics
-        arr1 = np.array([[e1**2 + e0**2 - e2**2 -e3**2, 2*(e1*e2 - e3*e0), 2*(e1*e3 + e2*e0)], 
-                        [2*(e1*e2 + e3*e0), e2**2 + e0**2 - e1**2 - e3**2, 2*(e2*e3 - e1*e0)],
-                        [2*(e1*e3 - e2*e0), 2*(e2*e3 + e1*e0), e3**2 + e0**2 - e1**2 - e2**2]])
-        arr2 = np.array([[u, v, w]]).T
-        pos_dot = np.dot(arr1,arr2)
+        # position kinematics
+        Rv_b = np.array([[e1**2 + e0**2 - e2**2 - e3**2, 2*(e1*e2 - e3*e0), 2*(e1*e3 + e2*e0)],
+                         [2*(e1*e2 + e3*e0), e2**2 + e0**2 - e1**2 - e3**2, 2*(e2*e3 - e1*e0)],
+                         [2*(e1*e3 - e2*e0), 2*(e2*e3 + e1*e0), e3**2 + e0**2 - e1**2 - e2**2]])
 
-        # Position Dynamics
-        arr3 = np.array([[r*v - q*w],
-                        [p*w - r*u], 
-                        [q*u - p*v]])
-        arr4 = (1/self.mass* np.array([[fx, fy, fz]]).T)
-        u_dot = arr3 + arr4
+        pos_dot = Rv_b @ np.array([u, v, w]).T
+        pn_dot = pos_dot.item(0)
+        pe_dot = pos_dot.item(1)
+        pd_dot = pos_dot.item(2)
+
+        # position dynamics
+        u_dot = r*v - q*w + 1/MAV.mass * fx
+        v_dot = p*w - r*u + 1/MAV.mass * fy
+        w_dot = q*u - p*v + 1/MAV.mass * fz
 
         # rotational kinematics
-        arr5 = np.array([[0, -p, -q, -r],
-                        [p, 0, r, -q], 
-                        [q, -r, 0, p], 
-                        [r, q, -p, 0]])
-        arr6 = np.array([[e0, e1, e2, e3]]).T
-        e0_dot = 0.5*np.dot(arr5,arr6)
+        e0_dot = (-p * e1 - q * e2 - r * e3) * 0.5
+        e1_dot = (p * e0 + r * e2 - q * e3) * 0.5
+        e2_dot = (q * e0 - r * e1 + p * e3) * 0.5
+        e3_dot = (r * e0 + q * e1 - p * e2) * 0.5
 
         # rotatonal dynamics
-        arr7 = np.array([[self.T1*p*q - self.T2*q*r],
-                        [self.T5*p*r - self.T6*(p**2 - r**2)], 
-                        [self.T7*p*q - self.T1*q*r]])
-        arr8 = np.array([[self.T3*Mx + self.T4*Mz], 
-                        [1/self.Jy*My], 
-                        [self.T4*Mx + self.T8*Mz]])
-        p_dot = arr7 + arr8
+        p_dot = MAV.gamma1 * p * q - MAV.gamma2 * q * r + MAV.gamma3 * l + MAV.gamma4 * n
+        q_dot = MAV.gamma5 * p * r - MAV.gamma6 * (p**2 - r**2) + 1/MAV.Jy * m
+        r_dot = MAV.gamma7 * p * q - MAV.gamma1 * q * r + MAV.gamma4 * l + MAV.gamma8 * n
 
         # collect the derivative of the states
-        x_dot = np.array([[pos_dot.item(0), 
-                        pos_dot.item(1), 
-                        pos_dot.item(2), 
-                        u_dot.item(0), 
-                        u_dot.item(1), 
-                        u_dot.item(2), 
-                        e0_dot.item(0), 
-                        e0_dot.item(1), 
-                        e0_dot.item(2), 
-                        e0_dot.item(3), 
-                        p_dot.item(0), 
-                        p_dot.item(1), 
-                        p_dot.item(2)]]).T
+        x_dot = np.array([[pn_dot, pe_dot, pd_dot, u_dot, v_dot, w_dot,
+                           e0_dot, e1_dot, e2_dot, e3_dot, p_dot, q_dot, r_dot]]).T
         return x_dot
 
     def _update_true_state(self):

@@ -63,7 +63,7 @@ class MavDynamics(MavDynamicsForces):
         wind_body = R_v2b @ steady_state
 
         # add the gust 
-        self._wind - wind_body + gust
+        self._wind = wind_body + gust
 
         # convert total wind to world frame
         V = self._state[3:6]
@@ -78,7 +78,7 @@ class MavDynamics(MavDynamicsForces):
         self._alpha = np.arctan2(Vr.item(2), Vr.item(0))
 
         # compute sideslip angle (self._beta = ?)
-        self._beta = np.asin(Vr.item(1)/self._Va)
+        self._beta = np.arcsin(Vr.item(1)/self._Va)
 
     def _forces_moments(self, delta):
         """
@@ -97,19 +97,22 @@ class MavDynamics(MavDynamicsForces):
         phi = self.true_state.phi
         theta = self.true_state.theta
         psi = self.true_state.psi
-        p = self.true_state.p
-        q = self.true_state.q
-        r = self.true_state.r
+        p = self._state.item(10)
+        q = self._state.item(11)
+        r = self._state.item(12)
 
         # compute gravitational forces ([fg_x, fg_y, fg_z])
         fb_grav = quaternion_to_rotation(self._state[6:10]).T @ np.array([[0, 0, MAV.mass * MAV.gravity]]).T
+ 
+        # propeller thrust and torque
+        thrust_prop, torque_prop = self._motor_thrust_torque(self._Va, delta_t)
 
         # compute Lift and Drag coefficients (CL, CD)
         def sigma(alpha):
-            num = 1. + np.exp(-MAV.M*(alpha-MAV.alpha0)) + np.exp(MAV.M*(alpha+MAV.alpha0))
-            den = (1. + np.exp(-MAV.M*(alpha-MAV.alpha0))) * (1. + np.exp(MAV.M*(alpha+MAV.alpha0)))
+            num = 1 + np.exp(-MAV.M*(alpha-MAV.alpha0)) + np.exp(MAV.M*(alpha+MAV.alpha0))
+            den = (1 + np.exp(-MAV.M*(alpha-MAV.alpha0))) * (1 + np.exp(MAV.M*(alpha+MAV.alpha0)))
             return num / den
-        CL = (1. - sigma(self._alpha)) * (MAV.C_L_0 + MAV.C_L_alpha * self._alpha) \
+        CL = (1 - sigma(self._alpha)) * (MAV.C_L_0 + MAV.C_L_alpha * self._alpha) \
             + sigma(self._alpha) * (2 * np.sign(self._alpha) * (np.sin(self._alpha)**2) * np.cos(self._alpha))
             
         # CL = (np.pi * MAV.AR) / (1 + np.sqrt(1 + (MAV.AR/2)**2))
@@ -117,11 +120,8 @@ class MavDynamics(MavDynamicsForces):
 
         # compute Lift and Drag Forces (F_lift, F_drag)
         dynamic_pressure = MAV.S_wing * 0.5 * MAV.rho * self._Va**2
-        F_lift = dynamic_pressure*(CL + (MAV.C_L_q*MAV.c*q/(2*self._Va)) + MAV.C_L_delta_e*delta_e)
-        F_drag = dynamic_pressure*(CD + (MAV.C_D_q*MAV.c*q/(2*self._Va)) + MAV.C_D_delta_e*delta_e)
-
-        # propeller thrust and torque
-        thrust_prop, torque_prop = self._motor_thrust_torque(self._Va, delta_t)
+        F_lift = dynamic_pressure * (CL + 0.5 * MAV.C_L_q * MAV.c / self._Va * q + MAV.C_L_delta_e * delta.elevator)
+        F_drag = dynamic_pressure * (CD + 0.5 * MAV.C_D_q * MAV.c / self._Va * q + MAV.C_D_delta_e * delta.elevator)
 
         # compute longitudinal forces in body frame (fx, fz)
         Rb_s = np.array([[np.cos(self._alpha), -np.sin(self._alpha)],
