@@ -91,14 +91,14 @@ while sim_time < SIM.end_time:
     estimated_state = mav.true_state
 
     # -------camera control-------------
-    #gimbal_cmd = gimbal.pointAtGround(estimated_state)  # point gimbal at ground
+    # gimbal_cmd = gimbal.pointAtGround(estimated_state)  # point gimbal at ground
     estimated_target_position = geolocation.update(estimated_state, pixels)
-    #gimbal_cmd = gimbal.pointAtPosition(estimated_state, estimated_target_position) # point gimbal at target position
-    gimbal_cmd = gimbal.pointAtPosition(estimated_state, target.position())  # point gimbal at target position
+    # gimbal_cmd = gimbal.pointAtPosition(estimated_state, estimated_target_position) # point gimbal at estimated target position
+    gimbal_cmd = gimbal.pointAtPosition(estimated_state, target.position())  # point gimbal at true target position
 
     # -------path manager-------------
-    path = path_manager.update(target.position())
-    #path = path_manager.update(estimated_target_position)
+    path = path_manager.update(target.position()) # center orbit on true target position
+    # path = path_manager.update(estimated_target_position) # center orbit on estimated target position
 
     # -------path follower-------------
     autopilot_commands = path_follower.update(path, estimated_state)

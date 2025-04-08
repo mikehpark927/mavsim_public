@@ -23,16 +23,18 @@ class Camera:
         R = Euler2Rotation(state.phi, state.theta, state.psi)  # R_b^i
         Rgim = Euler2Rotation(0, state.camera_el, state.camera_az)  # R_g^b
         Rcam = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]])  # R_g^c
-        Rtarget = np.eye(3)  # R_t^i
-        points = self._rotatePoints(self.target_points, Rtarget)  # rotate target to inertial frame
-        points = self._translatePoints(points, target_position - mav_position)  # translate to camera frame
-        points = self._rotatePoints(points, Rgim.T @ R.T)  # rotate into the gimbal frame
-        points = self._rotatePoints(points, Rcam)  # rotate into camera frame
-        # rotate and translate points defining mav
+        R_i2c = Rcam @ Rgim.T @ R.T # R_i^c rotation from inertial to camera frame
+        # Rtarget = np.eye(3)  # R_t^i
+        # points = self._rotatePoints(self.target_points, Rtarget)  # rotate target to inertial frame
+        ell = target_position - mav_position
+        points = self._translatePoints(points, ell)  # translate to camera frame
+        points = self._rotatePoints(points, R_i2c)  # rotate into the gimbal frame   
+        # project points onto camera frame for purposes of simulating camera view of target
         self.projected_points = self._projectOnCameraPlane(points)
-        # set pixel value as the first projected point
-        self.pixels.pixel_x = self.projected_points[0, 0]
-        self.pixels.pixel_y = self.projected_points[1, 0]
+        # project target centroid onto image plane for purposes of geolocation
+        ell = self._rotatePoints(ell, R_i2c)  # rotate into the gimbal frame
+        self.pixels.pixel_x = CAM.f * ell.item(0) / (ell.item(2) + 0.001) + np.random.normal(0., CAM.sigma_pixel)
+        self.pixels.pixel_y = CAM.f * ell.item(1) / (ell.item(2) + 0.001) + np.random.normal(0., CAM.sigma_pixel)
 
     def getPixels(self):
         return self.pixels

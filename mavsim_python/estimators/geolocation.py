@@ -4,107 +4,109 @@ target geolocation algorithm
     - Updated:
         4/1/2022 - RWB
         4/6/2022 - RWB
+        7/13/2023 - RWB
+        4/7/2025 - TWM
 """
 import numpy as np
-from scipy import stats
 import parameters.simulation_parameters as SIM
 import parameters.camera_parameters as CAM
-from tools.rotations import Euler2Rotation
+from tools.rotations import euler_to_rotation
+from estimators.filters import ExtendedKalmanFilterContinuousDiscrete
 
-
+# Note that state equations assume a constant-velocity model for the target
 class Geolocation:
-    def __init__(self, ts_control):
-        # initialize EKF for geolocation
+    def __init__(self, ts: float=0.01):
+        self.ekf = ExtendedKalmanFilterContinuousDiscrete(
+            f=self.f, 
+            Q = 0.01 * np.diag([
+                (1)**2,   # target north position
+                (1)**2,   # target east position
+                (1)**2,   # target down position
+                (10)**2,  # target north velocity
+                (10)**2,  # target east velocity
+                (10)**2,  # target down velocity
+                (3)**2,   # distance to target L
+                ]),
+            P0= 0.1*np.diag([
+                10**2,  # target north position
+                10**2,  # target east position
+                10**2,  # target down position
+                10**2,  # target north velocity
+                10**2,  # target east velocity
+                10**2,  # target down velocity
+                10**2,  # distance to target L
+                ]), 
+            xhat0=np.array([[
+                0.,  # target north position
+                0.,  # target east position
+                0.,  # target down position
+                0.,  # target north velocity
+                0.,  # target east velocity
+                0.,  # target down velocity
+                100.,  # distance to target L
+                ]]).T, 
+            Qu=0.01*np.diag([
+                1**2, # mav north position
+                1**2, # mav east position
+                1**2, # mav down position
+                1**2, # mav north velocity
+                1**2, # mav east velocity
+                1**2, # mav down velocity
+                ]), 
+            Ts = ts,
+            N = 10
+        )
+        self.R = 0.1 * np.diag([1.0, 1.0, 1.0, 1.0])
 
-        ###### TODO ######
-        self.xhat = np.array([
-            [0.],  # north position
-            [0.],  # east position
-            [0.],  # down position
-            [0.],  # north velocity
-            [0.],  # east velocity
-            [0.],  # down velocity
-            [0.], # distance to target L
-            ])
-        self.Q = np.diag([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        self.R = np.diag([0.0, 0.0, 0.0, 0.0])
-        self.N = 1  # number of prediction step per sample
-        self.P = np.diag([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        self.gate_threshold = 0 #stats.chi2.isf(q=0, df=0)
-        self.Ts = SIM.ts_control/self.N
-        # initialize viewer for geolocation error
-
-    def update(self, mav_state, pixels):
-        self.propagate_model(mav_state)
-        self.measurement_update(mav_state, pixels)
-        return self.xhat[0:3, :]  # return estimated NED position
-
-    def propagate_model(self, mav_state):
-        # model propagation
-
-        ##### TODO ######
-        
-        # self.xhat = 
+    def update(self, mav, pixels):
+        # system input is mav state
+        u = np.array([
             
-        # compute Jacobian
-            
-        # convert to discrete time models
-            
-        # update P with discrete time model
-        # self.P = ?
-        pass
-            
-    def measurement_update(self, mav_state, pixels):
-        # measurement updates
-        h = self.h(self.xhat, mav_state)
-        C = jacobian(self.h, self.xhat, mav_state)
-        y = self.measurements(mav_state, pixels)
-        ###### TODO ######
-        # self.P = ?
-        # self.xhat = ?
-        pass
+            ######## TODO ########
 
-    def f(self, xhat, mav):
-        target_position = xhat[0:3]
-        target_velocity = xhat[3:6]
+            ])    
+        xhat, P = self.ekf.propagate_model(u)
+        # update with pixel measurement
+        y=self.process_measurements(mav, pixels)
+        xhat, P = self.ekf.measurement_update(
+            y=y, 
+            u=u,
+            h=self.h,
+            R=self.R)
+        return xhat[0:3, :]  # return estimated NED position
 
-        ######  TODO  ######
+    def f(self, x:np.ndarray, u:np.ndarray)->np.ndarray:
         # system dynamics for propagation model: xdot = f(x, u)
-        f_ = np.zeros((7, 1))
-        # position dot = velocity
-        
-        # velocity dot = zero
 
-        # Ldot
-        return f_
+            ######## TODO ########
 
-    def h(self, xhat, mav):
-        ###### TODO ######
+        target_position_dot = 
+        target_velocity_dot = 
+        L_dot = 
+        xdot = np.concatenate((target_position_dot, target_velocity_dot, L_dot), axis=0)
+        return xdot
+
+    def h(self, x:np.ndarray, u:np.ndarray)->np.ndarray:
         # measurement model y
-        h_ = np.array([
-            [0],
-            [0],
-            [0],
-            [0],
-        ])
-        return h_
-
-    def measurements(self, mav, pixels):
-        ####### TODO ########
-        y = np.zeros((4,1))
+            ######## TODO ########
+        target_position = 
+        L = 
+        y = np.concatenate((target_position, L), axis=0)
         return y
 
-def jacobian(fun, x, mav_state):
-    # compute jacobian of fun with respect to x
-    f = fun(x, mav_state)
-    m = f.shape[0]
-    n = x.shape[0]
-    eps = 0.0001  # deviation
-    J = np.zeros((m, n))
-    for i in range(0, n):
-        x_eps = np.copy(x)
-        x_eps[i][0] += eps
-        f_eps = fun(x_eps, mav_state)
-        df = (f_eps - f) / eps
-        J[:, i] = df[:, 0]
-    return J
+    def process_measurements(self, mav, pixels):
+        # calculate measurement (target position, L) from mav position and pixel coordinates of target
+        # assume flat earth
+        h = mav.altitude
+        mav_position = np.array([[mav.north], [mav.east], [-h]])
+        ell = np.array([[pixels.pixel_x], [pixels.pixel_y], [CAM.f]])
+        ell_c = ell / np.linalg.norm(ell)
+            ######## TODO ########
+        R_b_i = 
+        R_g_b = 
+        R_c_g = 
+        ell_i = 
+        L = 
+        target_position = 
+        y = np.concatenate((target_position, np.array([[L]])), axis=0)
+        return y
