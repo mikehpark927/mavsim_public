@@ -4,11 +4,13 @@ mavsim: camera viewer (for chapter 13)
     - Update history:
         4/15/2019 - RWB
         3/31/2022 - RWB
+        7/13/2023 - RWB
+        4/07/2025 - TWM
 """
 import numpy as np
 import matplotlib.pyplot as plt
 import parameters.camera_parameters as CAM
-from tools.rotations import Euler2Rotation
+from tools.rotations import euler_to_rotation
 from message_types.msg_camera import MsgCamera
 
 class Camera:
@@ -20,18 +22,18 @@ class Camera:
     def updateProjectedPoints(self, state, target_position):
         mav_position = np.array([[state.north], [state.east], [-state.altitude]])  # NED coordinates
         # attitude of mav as a rotation matrix R from body to inertial
-        R = Euler2Rotation(state.phi, state.theta, state.psi)  # R_b^i
-        Rgim = Euler2Rotation(0, state.camera_el, state.camera_az)  # R_g^b
+        R = euler_to_rotation(state.phi, state.theta, state.psi)  # R_b^i
+        Rgim = euler_to_rotation(0, state.gimbal_el, state.gimbal_az)  # R_g^b
         Rcam = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]])  # R_g^c
         R_i2c = Rcam @ Rgim.T @ R.T # R_i^c rotation from inertial to camera frame
         # Rtarget = np.eye(3)  # R_t^i
         # points = self._rotatePoints(self.target_points, Rtarget)  # rotate target to inertial frame
         ell = target_position - mav_position
-        points = self._translatePoints(points, ell)  # translate to camera frame
+        points = self._translatePoints(self.target_points, ell)  # translate to camera frame
         points = self._rotatePoints(points, R_i2c)  # rotate into the gimbal frame   
-        # project points onto camera frame for purposes of simulating camera view of target
+        # project points onto the camera frame for purposes simulating camera view of target
         self.projected_points = self._projectOnCameraPlane(points)
-        # project target centroid onto image plane for purposes of geolocation
+        # project target centroid location onto image plane of camera for purposes of geolocation
         ell = self._rotatePoints(ell, R_i2c)  # rotate into the gimbal frame
         self.pixels.pixel_x = CAM.f * ell.item(0) / (ell.item(2) + 0.001) + np.random.normal(0., CAM.sigma_pixel)
         self.pixels.pixel_y = CAM.f * ell.item(1) / (ell.item(2) + 0.001) + np.random.normal(0., CAM.sigma_pixel)
