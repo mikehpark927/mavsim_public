@@ -6,7 +6,7 @@ autopilot block for mavsim_python
 """
 import numpy as np
 import parameters.control_parameters as AP
-# from tools.transfer_function import TransferFunction
+from tools.transfer_function import TransferFunction
 from tools.wrap import wrap
 from controllers.pi_control import PIControl
 from controllers.pd_control_with_rate import PDControlWithRate
@@ -60,7 +60,9 @@ class Autopilot:
 	
 	#### TODO #####
         # lateral autopilot
-
+        phi_c = self.course_from_roll.update(cmd.course_command, state.chi)
+        delta_a = self.course_from_roll.update(phi_c, state.phi, state.p)
+        delta_r = self.yaw_damper.update(state.r)
 
         # longitudinal autopilot
 

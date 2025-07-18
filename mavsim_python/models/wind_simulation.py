@@ -19,12 +19,12 @@ class WindSimulation:
         #   V_a = velocity of the airframe relative to surrounding air mass
         
         self.sigma_u = 1.06 # m/s
-        self._Lu = 200 # m
-        airspeed = 25 # m/s
+        self.Lu = 200 # m
+        Va = 25 # m/s
         self.sigma_v = self.sigma_u # m/s
-        self._Lv = self._Lu # m/s
+        self.Lv = self.Lu # m/s
         self.sigma_w = 0.7 # m/s
-        self._Lw = 50 # m
+        self.Lw = 50 # m
         
         # self.H_u = self.sigma_u * np.sqrt(2*self.V_a / np.pi*self.L_u) * 1 / (self._steady_state + (self.V_a / self.L_u))
         # self.H_v = self.sigma_v * np.sqrt(3*self.V_a / np.pi*self.L_v) * \
@@ -37,23 +37,41 @@ class WindSimulation:
         # self.v_w = TransferFunction(num=np.array([[self.H_v,self.H_v]]), den=np.array([[1,1,1]]),Ts=Ts)
         # self.w_w = TransferFunction(num=np.array([[self.H_w,self.H_w]]), den=np.array([[1,1,1]]),Ts=Ts)
         # self._Ts = Ts
+        self._A = np.array([[-Va/self.Lu, 0, 0, 0, 0],
+                            [0, -2*(Va/self.Lv), -(Va/self.Lv)**2, 0, 0],
+                            [0, 1, 0, 0, 0],
+                            [0, 0, 0, -2*(Va/self.Lw), -(Va/self.Lw)**2],
+                            [0, 0, 0, 1, 0]])
+        self._B = np.array([[1, 0, 0],
+                            [0, 1, 0],
+                            [0, 0, 0],
+                            [0, 0, 1],
+                            [0, 0, 0]])
+        self._C = np.array([[self.sigma_u * np.sqrt((2*Va)/self.Lu), 0, 0, 0, 0],
+                            [0, self.sigma_v * np.sqrt((3*Va)/self.Lv), np.sqrt((Va/self.Lv)**3), 0, 0],
+                            [0, 0, 0, self.sigma_w * np.sqrt((3*Va)/self.Lv), np.sqrt((Va/self.Lw)**3)]])
+        self._gust_state = np.zeros((5, 1))
         self._Ts = Ts
-        airspeed_div_Lu = airspeed / self._Lu
-        u_scalar = self.sigma_u * np.sqrt(2. * airspeed_div_Lu)
-        self.u_w = TransferFunction(num=np.array([[u_scalar]]), den=np.array([[1, airspeed_div_Lu]]), Ts=self._Ts)
-        airspeed_div_Lv = airspeed / self._Lv
-        v_scalar = self.sigma_v * np.sqrt(3. * airspeed_div_Lv)
-        self.v_w = TransferFunction(num=np.array([[v_scalar, v_scalar * airspeed_div_Lv / np.sqrt(3)]]), den=np.array([[1, 2. * airspeed_div_Lv, airspeed_div_Lv**2]]), Ts=self._Ts)
-        airspeed_div_Lw = airspeed / self._Lv
-        w_scalar = self.sigma_w * np.sqrt(3. * airspeed_div_Lw)
-        self.w_w = TransferFunction(num=np.array([[w_scalar, w_scalar * airspeed_div_Lw / np.sqrt(3)]]), den=np.array([[1, 2. * airspeed_div_Lw, airspeed_div_Lw**2]]), Ts=self._Ts)
         
-    def update(self):
+    def update(self, Va):
         # returns a six vector.
         #   The first three elements are the steady state wind in the inertial frame
         #   The second three elements are the gust in the body frame
-        gust = np.array([[self.u_w.update(np.random.randn())],
-                         [self.v_w.update(np.random.randn())],
-                         [self.w_w.update(np.random.randn())]])
-        return np.concatenate(( self._steady_state, gust ))
+         return np.concatenate(( self._steady_state, self._gust(Va) ))
+
+    def _gust(self, Va):
+        self._A = np.array([[-Va/self.Lu, 0, 0, 0, 0],
+                            [0, -2*(Va/self.Lv), -(Va/self.Lv)**2, 0, 0],
+                            [0, 1, 0, 0, 0],
+                            [0, 0, 0, -2*(Va/self.Lw), -(Va/self.Lw)**2],
+                            [0, 0, 0, 1, 0]])
+        self._C = np.array([[self.sigma_u * np.sqrt((2*Va)/self.Lu), 0, 0, 0, 0],
+                            [0, self.sigma_v * np.sqrt((3*Va)/self.Lv), np.sqrt((Va/self.Lv)**3), 0, 0],
+                            [0, 0, 0, self.sigma_w * np.sqrt((3*Va)/self.Lv), np.sqrt((Va/self.Lw)**3)]])
+        # calculate wind gust using Dryden model.  Gust is defined in the body frame
+        w = np.random.randn(3, 1)  # zero mean unit variance Gaussian (white noise)
+        # propagate Dryden model (Euler method): x[k+1] = x[k] + Ts*( A x[k] + B w[k] )
+        self._gust_state += self._Ts * (self._A @ self._gust_state + self._B @ w)
+        # output the current gust: y[k] = C x[k]
+        return self._C @ self._gust_state
 
