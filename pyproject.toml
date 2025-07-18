@@ -1,0 +1,22 @@
+[project]
+name = "mavsim-public"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[dependency-groups]
+dev = [
+    "fastapi>=0.116.1",
+    "mkdocs>=1.6.1",
+    "pre-commit>=4.2.0",
+    "pydantic>=2.11.7",
+    "pytest>=8.4.1",
+    "ruff>=0.12.4",
+    "numpy>=2.2.6",
+    "pyqt5>=5.15.11",
+    "pyqtgraph>=0.13.7",
+    "scipy>=1.15.3",
+    "pyopengl==3.1.1a1",
+    "matplotlib>=3.10.3",
+]
