@@ -59,16 +59,13 @@ class MavDynamics(MavDynamicsForces):
 
         ##### TODO #####
         # convert steady-state wind vector from world to body frame
-        R_v2b = quaternion_to_rotation(self._state[6:10])
-        wind_body = R_v2b @ steady_state
-
-        # add the gust 
-        self._wind = wind_body + gust
+        R_wb = quaternion_to_rotation(self._state[6:10])
 
         # convert total wind to world frame
-        V = self._state[3:6]
+        self._wind = R_wb @ steady_state + gust
 
         # velocity vector relative to the airmass ([ur , vr, wr]= ?)
+        V = self._state[3:6]
         Vr = V - self._wind
         
         # compute airspeed (self._Va = ?)
@@ -94,9 +91,7 @@ class MavDynamics(MavDynamicsForces):
         
         ##### TODO ######
         # extract states (phi, theta, psi, p, q, r)
-        phi = self.true_state.phi
-        theta = self.true_state.theta
-        psi = self.true_state.psi
+        phi, theta, psi = quaternion_to_euler(self._state[6:10])
         p = self._state.item(10)
         q = self._state.item(11)
         r = self._state.item(12)
@@ -120,8 +115,8 @@ class MavDynamics(MavDynamicsForces):
 
         # compute Lift and Drag Forces (F_lift, F_drag)
         dynamic_pressure = MAV.S_wing * 0.5 * MAV.rho * self._Va**2
-        F_lift = dynamic_pressure * (CL + 0.5 * MAV.C_L_q * MAV.c / self._Va * q + MAV.C_L_delta_e * delta.elevator)
-        F_drag = dynamic_pressure * (CD + 0.5 * MAV.C_D_q * MAV.c / self._Va * q + MAV.C_D_delta_e * delta.elevator)
+        F_lift = dynamic_pressure * (CL + MAV.C_L_q * (MAV.c / (2*self._Va)) * q + MAV.C_L_delta_e * delta.elevator)
+        F_drag = dynamic_pressure * (CD + MAV.C_D_q * (MAV.c / (2*self._Va)) * q + MAV.C_D_delta_e * delta.elevator)
 
         # compute longitudinal forces in body frame (fx, fz)
         Rb_s = np.array([[np.cos(self._alpha), -np.sin(self._alpha)],
@@ -132,18 +127,18 @@ class MavDynamics(MavDynamicsForces):
         fy = dynamic_pressure*(MAV.C_Y_0 + MAV.C_Y_beta*self._beta + MAV.C_Y_p*MAV.b*p/(2*self._Va) + MAV.C_Y_r*MAV.b*r/(2*self._Va)+ MAV.C_Y_delta_a*delta_a + MAV.C_Y_delta_r*delta_r)
 
         # compute logitudinal torque in body frame (My)
-        My = dynamic_pressure*MAV.c*(MAV.C_m_0 + MAV.C_m_alpha*self._alpha + MAV.C_m_q*MAV.c*q/(2*self._Va) + MAV.C_m_delta_e*delta_e)
+        My = dynamic_pressure*MAV.c*(MAV.C_m_0 + MAV.C_m_alpha*self._alpha + MAV.C_m_q*(MAV.c*q/(2*self._Va)) + MAV.C_m_delta_e*delta_e)
 
         # compute lateral torques in body frame (Mx, Mz)
-        Mx = dynamic_pressure*MAV.b*(MAV.C_ell_0 + MAV.C_ell_beta*self._beta + MAV.C_ell_p*MAV.b*p/(2*self._Va) + MAV.C_ell_r*MAV.b*r/(2*self._Va) + MAV.C_ell_delta_a*delta_a + MAV.C_ell_delta_r*delta_r)
-        Mz = dynamic_pressure*MAV.b*(MAV.C_n_0 + MAV.C_n_beta*self._beta + MAV.C_n_p*MAV.b*p/(2*self._Va) + MAV.C_n_r*MAV.b*r/(2*self._Va) + MAV.C_n_delta_a*delta_a + MAV.C_n_delta_r*delta_r)
+        Mx = dynamic_pressure*MAV.b*(MAV.C_ell_0 + MAV.C_ell_beta*self._beta + MAV.C_ell_p*(MAV.b*p/(2*self._Va)) + MAV.C_ell_r*(MAV.b*r/(2*self._Va)) + MAV.C_ell_delta_a*delta_a + MAV.C_ell_delta_r*delta_r)
+        Mz = dynamic_pressure*MAV.b*(MAV.C_n_0 + MAV.C_n_beta*self._beta + MAV.C_n_p*(MAV.b*p/(2*self._Va)) + MAV.C_n_r*(MAV.b*r/(2*self._Va)) + MAV.C_n_delta_a*delta_a + MAV.C_n_delta_r*delta_r)
         
         # compute full forces
         Fx = fb_grav.item(0) + thrust_prop + fx_fz.item(0)
         Fy = fb_grav.item(1) + fy
         Fz = fb_grav.item(2) + fx_fz.item(1)
-        Mx = Mx + torque_prop
-        
+        Mx = Mx - torque_prop
+
         forces_moments = np.array([[Fx, Fy, Fz, Mx, My, Mz]]).T
         return forces_moments
 
@@ -155,8 +150,8 @@ class MavDynamics(MavDynamicsForces):
 
         # Angular speed of propeller (omega_p = ?)
         a = MAV.C_Q0 * MAV.rho * MAV.D_prop**5 / ((2*np.pi)**2)
-        b = (MAV.C_Q1 * MAV.rho * MAV.D_prop**4 * Va / (2*np.pi)) + (MAV.KQ**2 / MAV.R_motor)
-        c = (MAV.C_Q2 * MAV.rho * MAV.D_prop**3 * Va**2) - (MAV.KQ * v_in) / MAV.R_motor + MAV.KQ * MAV.i0
+        b = (MAV.C_Q1 * MAV.rho * MAV.D_prop**4 / (2*np.pi)) * Va + (MAV.KQ**2 / MAV.R_motor)
+        c = (MAV.C_Q2 * MAV.rho * MAV.D_prop**3 * Va**2) - (MAV.KQ / MAV.R_motor) * v_in + MAV.KQ * MAV.i0
         
         omega_p = (-b + np.sqrt(b**2 - 4*a*c)) / (2*a)
         
@@ -168,8 +163,8 @@ class MavDynamics(MavDynamicsForces):
         C_Q = MAV.C_Q2 * J_op**2 + MAV.C_Q1 * J_op + MAV.C_Q0
         
         n =  omega_p / (2 * np.pi)
-        thrust_prop = MAV.rho * n**2 * np.power(MAV.D_prop,4) * C_T
-        torque_prop = -MAV.rho * n**2 * np.power(MAV.D_prop,5) * C_Q
+        thrust_prop = MAV.rho * n**2 * MAV.D_prop**4 * C_T
+        torque_prop = -MAV.rho * n**2 * MAV.D_prop**5 * C_Q
 
         return thrust_prop, torque_prop
 

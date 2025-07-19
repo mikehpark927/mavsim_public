@@ -45,7 +45,7 @@ while sim_time < end_time:
     delta.throttle = 0.6768
 
     # ------- physical system -------------
-    current_wind = wind.update(mav.true_state.Va)  # get the new wind vector
+    current_wind = wind.update()  # get the new wind vector
     mav.update(delta, current_wind)  # propagate the MAV dynamics
 
     # -------update viewer-------------
