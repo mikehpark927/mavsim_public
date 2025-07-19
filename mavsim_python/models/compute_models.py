@@ -97,34 +97,25 @@ def compute_tf_model(mav, trim_state, trim_input):
     alpha_trim = mav._alpha
     phi, theta_trim, psi = quaternion_to_euler(trim_state[6:10])
     
-    rho = MAV.rho
-    S = MAV.S_wing
-    Va = mav._Va
-    b = MAV.b
-    beta = mav._beta
-    alpha = mav._alpha
-    c = MAV.c
-    Jy = MAV.Jy
-    C_p_p = MAV.C_p_p
-
     ###### TODO ######
     # define transfer function constants
 
     # Lateral dynamics
-    a_phi1 = -0.5 * rho * Va**2 * S * b * C_p_p * (b/(2*Va))
-    a_phi2 = 0.5 * rho * Va**2 * S * b * MAV.C_p_delta_a
+    a_phi1 = -1/2 * MAV.rho * Va_trim**2 * MAV.S_wing * MAV.b * MAV.C_p_p * MAV.b / (2 * Va_trim)
+    a_phi2 = 1/2 * MAV.rho * Va_trim**2 * MAV.S_wing * MAV.b * MAV.C_p_delta_a
     
     # Longitudinal dynamics
-    thetade = (rho * (Va**2) * c * S) / (2. * Jy)
-    a_theta1 = -thetade * MAV.C_m_q * (c / (2. * Va))
-    a_theta2 = - thetade * MAV.C_m_alpha
-    a_theta3 = thetade * MAV.C_m_delta_e
+    a_theta1 = -1/(2*MAV.Jy) * MAV.rho * Va_trim**2 * MAV.c * MAV.S_wing * MAV.C_m_q * MAV.c / (2 * Va_trim)
+    a_theta2 = -1/(2*MAV.Jy) * MAV.rho * Va_trim**2 * MAV.c * MAV.S_wing * MAV.C_m_alpha
+    a_theta3 = 1/(2*MAV.Jy) * MAV.rho * Va_trim**2 * MAV.c * MAV.S_wing * MAV.C_m_delta_e
     
     # Compute transfer function coefficients using new propulsion model
     # Transfer function from throttle and pitch angle to airspeed
-    a_V1 = MAV.rho * Va_trim * MAV.S_wing / MAV.mass * (MAV.C_D_0 + MAV.C_D_alpha * alpha_trim + MAV.C_D_delta_e * trim_input.elevator) \
-        - dT_dVa(mav, Va_trim, trim_input.throttle) / MAV.mass
-    a_V2 = dT_ddelta_t(mav, Va_trim, trim_input.throttle) / MAV.mass 
+    deriv1 = dT_ddelta_t(mav, Va_trim, trim_input.throttle)
+    deriv2 = dT_dVa(mav, Va_trim, trim_input.throttle)
+    a_V1 = (MAV.rho * Va_trim * MAV.S_wing) / MAV.mass * (MAV.C_D_0 + MAV.C_D_alpha * alpha_trim + MAV.C_D_delta_e * trim_input.elevator)\
+         - 1/MAV.mass * deriv2
+    a_V2 = deriv1 / MAV.mass
     a_V3 = MAV.gravity * np.cos(theta_trim - alpha_trim)
 
     return Va_trim, alpha_trim, theta_trim, a_phi1, a_phi2, a_theta1, a_theta2, a_theta3, a_V1, a_V2, a_V3
