@@ -88,7 +88,7 @@ class MavDynamics:
         """
         ##### TODO #####
         
-        # extract the states
+        # Extract the states
         pn = state.item(0)
         pe = state.item(1)
         pd = state.item(2)
@@ -102,7 +102,8 @@ class MavDynamics:
         p = state.item(10)
         q = state.item(11)
         r = state.item(12)
-        #   extract forces/moments
+
+        # Extract forces/moments
         fx = forces_moments.item(0)
         fy = forces_moments.item(1)
         fz = forces_moments.item(2)
@@ -126,15 +127,27 @@ class MavDynamics:
         w_dot = q*u - p*v + 1/MAV.mass * fz
 
         # rotational kinematics
-        e0_dot = (-p * e1 - q * e2 - r * e3) * 0.5
-        e1_dot = (p * e0 + r * e2 - q * e3) * 0.5
-        e2_dot = (q * e0 - r * e1 + p * e3) * 0.5
-        e3_dot = (r * e0 + q * e1 - p * e2) * 0.5
+        Q = np.array([[0, -p, -q, -r],
+                        [p, 0, r, -q],
+                        [q, -r, 0, p],
+                        [r, q, -p, 0]])
+        quaternion_dot = Q @ np.array([e0, e1, e2, e3]).T
+        e0_dot = quaternion_dot.item(0) * 0.5
+        e1_dot = quaternion_dot.item(1) * 0.5
+        e2_dot = quaternion_dot.item(2) * 0.5
+        e3_dot = quaternion_dot.item(3) * 0.5
 
         # rotatonal dynamics
-        p_dot = MAV.gamma1 * p * q - MAV.gamma2 * q * r + MAV.gamma3 * l + MAV.gamma4 * n
-        q_dot = MAV.gamma5 * p * r - MAV.gamma6 * (p**2 - r**2) + 1/MAV.Jy * m
-        r_dot = MAV.gamma7 * p * q - MAV.gamma1 * q * r + MAV.gamma4 * l + MAV.gamma8 * n
+        M1 = np.array([[MAV.gamma1 * p * q - MAV.gamma2 * q * r], 
+                       [MAV.gamma5 * p * r - MAV.gamma6 * (p**2 - r**2)],
+                       [MAV.gamma7 * p * q - MAV.gamma1 * q * r]])
+        M2 = np.array([[MAV.gamma3 * l + MAV.gamma4 * n],
+                       [1/MAV.Jy * m],
+                       [MAV.gamma4 * l + MAV.gamma8 * n]])
+        M3 = np.add(M1,M2)
+        p_dot = M3.item(0)
+        q_dot = M3.item(1)
+        r_dot = M3.item(2)
 
         # collect the derivative of the states
         x_dot = np.array([[pn_dot, pe_dot, pd_dot, u_dot, v_dot, w_dot,

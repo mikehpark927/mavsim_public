@@ -18,7 +18,7 @@ state = np.array([[5], [2], [-20], [5],
                         [0], [1], [0.5], [0], [0], [0]])
 forces_moments = np.array([[10, 5, 0, 0, 14, 0]]).T
 mav = MavDynamics(SIM.ts_simulation)
-x_dot = mav._derivatives(state, forces_moments)
+x_dot = mav._f(state, forces_moments)
 
 print("State Derivatives: Case 1")
 print("north_dot: ", x_dot[0])
@@ -56,7 +56,7 @@ state = np.array([[5], [2], [-20], [0],
                         [.2], [0], [0], [3], [0], [0]])
 forces_moments = np.array([[10, 5, 0, 0, 14, 0]]).T
 mav = MavDynamics(SIM.ts_simulation)
-x_dot = mav._derivatives(state, forces_moments)
+x_dot = mav._f(state, forces_moments)
 
 print("State Derivatives: Case 2")
 print("north_dot: ", x_dot[0])
@@ -74,9 +74,15 @@ print("q_dot: " , x_dot[11])
 print("r_dot: " , x_dot[12])
 
 # State Derivatives: Case 2
+# WAS
 # north_dot:  [0.08746356]
 # east_dot:  [-1.96793003]
 # down_dot:  [2.79883382]
+# I BELIEVE THEY SHOULD BE
+# north_dot:  [0.24]
+# east_dot:  [-5.4]
+# down_dot:  [7.68]
+# THE VALUES BELOW ARE CONSISTENT
 # u_dot:  [9.90909091]
 # v_dot:  [0.45454545]
 # w_dot:  [0.]
