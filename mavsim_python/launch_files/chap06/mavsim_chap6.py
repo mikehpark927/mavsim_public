@@ -30,7 +30,7 @@ import time
 wind = WindSimulation(SIM.ts_simulation)
 mav = MavDynamics(SIM.ts_simulation)
 autopilot = Autopilot(SIM.ts_simulation)
-viewers = ViewManager(mav=True, 
+viewers = ViewManager(animation=True, 
                       data=True,
                       video=False, video_name='chap6.mp4')
 

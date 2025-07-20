@@ -56,17 +56,7 @@ class Autopilot:
                         limit=1.0)
         self.commanded_state = MsgState()
 
-    def update(self, cmd, state):
-	
-	#### TODO #####
-        # lateral autopilot
-        phi_c = self.course_from_roll.update(cmd.course_command, state.chi)
-        delta_a = self.course_from_roll.update(phi_c, state.phi, state.p)
-        delta_r = self.yaw_damper.update(state.r)
-
-        # longitudinal autopilot
-
-
+    def update(self, cmd, state):  
         # construct control outputs and commanded states
         delta = MsgDelta(elevator=0,
                          aileron=0,
@@ -77,6 +67,25 @@ class Autopilot:
         self.commanded_state.phi = 0
         self.commanded_state.theta = 0
         self.commanded_state.chi = 0
+
+	    #### TODO #####
+        # lateral autopilot
+        phi_c = self.course_from_roll.update(cmd.course_command, state.chi)
+        delta.aileron = self.roll_from_aileron.update(phi_c, state.phi, state.p)
+        delta.rudder = self.yaw_damper.update(state.r)
+
+        # longitudinal autopilot
+        h_c = cmd.altitude_command
+        theta_c = self.altitude_from_pitch.update(h_c, state.altitude)
+        delta.elevator = self.pitch_from_elevator.update(theta_c, state.theta, state.q)
+        delta.throttle = self.airspeed_from_throttle.update(cmd.airspeed_command, state.Va)
+        
+        self.commanded_state.altitude = cmd.altitude_command
+        self.commanded_state.Va = cmd.airspeed_command
+        self.commanded_state.phi = phi_c
+        self.commanded_state.theta = theta_c
+        self.commanded_state.chi = cmd.course_command
+
         return delta, self.commanded_state
 
     def saturate(self, input, low_limit, up_limit):

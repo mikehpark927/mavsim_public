@@ -1,5 +1,5 @@
 import numpy as np
-import design_projects.chap05.model_coef as TF
+import launch_files.chap05.model_coef as TF
 import parameters.aerosonde_parameters as MAV
 
 
@@ -43,5 +43,5 @@ altitude_zone = 0
 #---------airspeed hold using throttle---------------
 wn_airspeed_throttle = 0
 zeta_airspeed_throttle = 0
-airspeed_throttle_kp = 0
+airspeed_throttle_kp = 10
 airspeed_throttle_ki = 0
