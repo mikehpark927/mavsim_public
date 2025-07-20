@@ -112,9 +112,8 @@ class MavDynamics:
         n = forces_moments.item(5)
 
         # position kinematics
-        Rv_b = np.array([[e1**2 + e0**2 - e2**2 - e3**2, 2*(e1*e2 - e3*e0), 2*(e1*e3 + e2*e0)],
-                         [2*(e1*e2 + e3*e0), e2**2 + e0**2 - e1**2 - e3**2, 2*(e2*e3 - e1*e0)],
-                         [2*(e1*e3 - e2*e0), 2*(e2*e3 + e1*e0), e3**2 + e0**2 - e1**2 - e2**2]])
+        quaternions = np.array([[e0], [e1], [e2], [e3]])
+        Rv_b = quaternion_to_rotation(quaternions)
 
         pos_dot = Rv_b @ np.array([u, v, w]).T
         pn_dot = pos_dot.item(0)
@@ -122,28 +121,29 @@ class MavDynamics:
         pd_dot = pos_dot.item(2)
 
         # position dynamics
-        u_dot = r*v - q*w + 1/MAV.mass * fx
-        v_dot = p*w - r*u + 1/MAV.mass * fy
-        w_dot = q*u - p*v + 1/MAV.mass * fz
+        vel_dot = np.array([[r*v - q*w], [p*w - r*u], [q*u - p*v]]) + np.array([[fx], [fy], [fz]])/MAV.mass
+        u_dot = vel_dot.item(0)
+        v_dot = vel_dot.item(1)
+        w_dot = vel_dot.item(2)
 
         # rotational kinematics
         Q = np.array([[0, -p, -q, -r],
                         [p, 0, r, -q],
                         [q, -r, 0, p],
                         [r, q, -p, 0]])
-        quaternion_dot = Q @ np.array([e0, e1, e2, e3]).T
+        quaternion_dot = Q @ quaternions
         e0_dot = quaternion_dot.item(0) * 0.5
         e1_dot = quaternion_dot.item(1) * 0.5
         e2_dot = quaternion_dot.item(2) * 0.5
         e3_dot = quaternion_dot.item(3) * 0.5
 
         # rotatonal dynamics
-        M1 = np.array([[MAV.gamma1 * p * q - MAV.gamma2 * q * r], 
-                       [MAV.gamma5 * p * r - MAV.gamma6 * (p**2 - r**2)],
-                       [MAV.gamma7 * p * q - MAV.gamma1 * q * r]])
-        M2 = np.array([[MAV.gamma3 * l + MAV.gamma4 * n],
-                       [1/MAV.Jy * m],
-                       [MAV.gamma4 * l + MAV.gamma8 * n]])
+        M1 = np.array([[MAV.gamma1*p*q - MAV.gamma2*q*r], 
+                       [MAV.gamma5*p*r - MAV.gamma6*(p**2 - r**2)],
+                       [MAV.gamma7*p*q - MAV.gamma1*q*r]])
+        M2 = np.array([[MAV.gamma3*l + MAV.gamma4*n],
+                       [1/MAV.Jy*m],
+                       [MAV.gamma4*l + MAV.gamma8*n]])
         M3 = np.add(M1,M2)
         p_dot = M3.item(0)
         q_dot = M3.item(1)

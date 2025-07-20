@@ -15,12 +15,6 @@ from message_types.msg_delta import MsgDelta
 def compute_model(mav, trim_state, trim_input):
     # Note: this function alters the mav private variables
     A_lon, B_lon, A_lat, B_lat = compute_ss_model(mav, trim_state, trim_input)
-    # compute eigenvalues of A_lat and A_lon
-    lon_eigvals, _ = np.linalg.eig(A_lon)
-    icsi_lon0, wn_lon0 = convert_complex_conj_pair(lon_eigvals[1], lon_eigvals[2])
-    icsi_lon1, wn_lon1 = convert_complex_conj_pair(lon_eigvals[3], lon_eigvals[4])
-    lat_eigvals, _ = np.linalg.eig(A_lat)
-    icsi_lat, wn_lat = convert_complex_conj_pair(lat_eigvals[3], lat_eigvals[4])
     Va_trim, alpha_trim, theta_trim, a_phi1, a_phi2, a_theta1, a_theta2, a_theta3, \
     a_V1, a_V2, a_V3 = compute_tf_model(mav, trim_state, trim_input)
 
@@ -120,42 +114,44 @@ def compute_tf_model(mav, trim_state, trim_input):
 
     return Va_trim, alpha_trim, theta_trim, a_phi1, a_phi2, a_theta1, a_theta2, a_theta3, a_V1, a_V2, a_V3
 
+"""
+Computes the longitudinal and lateral state-space models from the full 12x12 model.
 
+Args:
+    mav: The MAV dynamics model.
+    trim_state: Trimmed state (13x1).
+    trim_input: Trimmed control input (MsgDelta).
+
+Returns:
+    A_lon, B_lon, A_lat, B_lat: State-space matrices for longitudinal and lateral dynamics.
+"""
 def compute_ss_model(mav, trim_state, trim_input):
-    x_euler = euler_state(trim_state)
-    
     ##### TODO #####
-    A = df_dx(mav, x_euler, trim_input)
-    B = df_du(mav, x_euler, trim_input)
-    # extract longitudinal states (u, w, q, theta, pd)
-    # u is the 4th state, w is the 6th state, q is the 11th state, theta is the 8th state, h is (-) the 3rd state
-    A_lon = np.array([A[3, [3, 5, 10, 7, 2]],
-                      A[5, [3, 5, 10, 7, 2]],
-                      A[10, [3, 5, 10, 7, 2]],
-                      A[7, [3, 5, 10, 7, 2]],
-                      A[2, [3, 5, 10, 7, 2]]])
-    B_lon = np.array([B[3, [0, 3]],
-                      B[5, [0, 3]],
-                      B[10, [0, 3]],
-                      B[7, [0, 3]],
-                      B[2, [0, 3]]])
-    # change pd to h
-    A_lon[-1, :-1] *= -1.
-    A_lon[:, -1] *= -1.
-    B_lon[-1, :] *= -1.
+    # Convert quaternion state to Euler state
+    x_euler = euler_state(trim_state)
 
-    # extract lateral states (v, p, r, phi, psi)
-    # v is the 5th state, p is the 10th state, r is the 12th state, phi is the 7th state, psi is the 9th state
-    A_lat = np.array([A[4, [4, 9, 11, 6, 8]],
-                      A[9, [4, 9, 11, 6, 8]],
-                      A[11, [4, 9, 11, 6, 8]],
-                      A[6, [4, 9, 11, 6, 8]],
-                      A[8, [4, 9, 11, 6, 8]]])
-    B_lat = np.array([B[4, [1, 2]],
-                      B[9, [1, 2]],
-                      B[11, [1, 2]],
-                      B[6, [1, 2]],
-                      B[8, [1, 2]]])
+    # **1. Compute full-state Jacobians**
+    A = df_dx(mav, x_euler, trim_input)  # 12x12
+    B = df_du(mav, x_euler, trim_input)  # 12x4
+    
+    # **2. Extract Longitudinal System Matrices**
+    # Longitudinal states: [u, w, q, theta, h] (5x1)
+    lon_idx = [3, 5, 10, 7, 2]  # Indices of longitudinal states
+    A_lon = A[np.ix_([3, 5, 10, 7, 2], [3, 5, 10, 7, 2])]  # Extract relevant rows & columns (5x5)
+    B_lon = B[np.ix_(lon_idx, [0, 3])]  # Inputs: [delta_elevator, delta_throttle] (5x2)
+
+    for i in range(0,5):
+        A_lon[i,4] = -A_lon[i,4]
+        A_lon[4,i] = -A_lon[4,i]
+    for i in range(0,2):
+        B_lon[4,i] = -B_lon[4,i] 
+
+    # **3. Extract Lateral System Matrices**
+    # Lateral states: [v, p, r, phi, psi] (5x1)
+    lat_idx = [4, 9, 11, 6, 8]  # Indices of lateral states
+    A_lat = A[np.ix_(lat_idx, lat_idx)]  # Extract relevant rows & columns (5x5)
+    B_lat = B[np.ix_(lat_idx, [1, 2])]  # Inputs: [delta_aileron, delta_rudder] (5x2)
+
     return A_lon, B_lon, A_lat, B_lat
 
 def euler_state(x_quat):
@@ -198,53 +194,100 @@ def f_euler(mav, x_euler, delta):
     mav._update_velocity_data()
     ##### TODO #####
     f_euler_ = np.zeros((12,1))
-    dEuler_dquat = dxe_dxq(x_quat)
-    f_quat = mav._f(x_quat, mav._forces_moments(delta))
+    f = mav._f(x_quat, mav._forces_moments(delta))
+    f_euler_ = euler_state(f)
 
-    return dEuler_dquat @ f_quat
+    # correct the attitude states
+    e = x_quat[6:10]
+    phi = x_euler.item(6)
+    theta = x_euler.item(7)
+    psi = x_euler.item(8)
+    dTheta_dquat = np.zeros((3,4))
+    for j in range(0,4):
+        tmp = np.zeros((4, 1))
+        tmp[j][0] = .001
+        e_eps = (e +tmp) / np.linalg.norm(e + tmp)
+        phi_eps, theta_eps, psi_eps = quaternion_to_euler(e_eps)
+        dTheta_dquat[0][j] = (theta_eps - theta) / 0.001
+        dTheta_dquat[1][j] = (phi_eps - phi) / 0.001
+        dTheta_dquat[2][j] = (psi_eps - psi) / 0.001
 
+    f_euler_[6:9] = np.copy(dTheta_dquat @ f[6:10])
+
+    return f_euler_
+
+
+"""
+Computes the Jacobian matrix df/dx using finite differences.
+
+Args:
+    mav: The MAV dynamics model.
+    x_euler: The state vector in Euler representation (12x1).
+    delta: Control input vector.
+
+Returns:
+    A: Jacobian matrix (12x12), df/dx.
+"""
 def df_dx(mav, x_euler, delta):
     # take partial of f_euler with respect to x_euler
     eps = 0.01  # deviation
 
     ##### TODO #####
-    A = np.zeros((12, 12))
-    for i in range(12):
-        for j in range(12):
-            elr_left = np.copy(x_euler)
-            elr_left[j, 0] -= eps
-            f_left = f_euler(mav, elr_left, delta)
-            elr_right = np.copy(x_euler)
-            elr_right[j, 0] += eps
-            f_right = f_euler(mav, elr_right, delta)
-            A[i, j] = (f_right.item(i) - f_left.item(i)) / (2. * eps)
+    n = 12  # Number of states
+    A = np.zeros((n, n))  # Initialize Jacobian matrix
+
+    # Compute f_euler at the nominal state
+    f_euler0 = f_euler(mav, x_euler, delta)
+
+    # Loop over each state variable to compute partial derivatives
+    for i in range(n):
+        x_perturbed = np.copy(x_euler)  # Copy original state
+        x_perturbed[i] += eps  # Perturb state i
+        f_euler1 = f_euler(mav, x_perturbed, delta)  # Compute f(x + eps)
+        # Compute finite difference approximation of partial derivative
+        df = (f_euler1.flatten() - f_euler0.flatten()) / eps
+        A[:, i] = df
+
     return A
 
+"""
+Computes the Jacobian matrix df/du using finite differences.
 
+Args:
+    mav: The MAV dynamics model.
+    x_euler: The state vector in Euler representation (12x1).
+    delta: Control input vector (MsgDelta).
+
+Returns:
+    B: Jacobian matrix (12x4), df/du.
+"""
 def df_du(mav, x_euler, delta):
     # take partial of f_euler with respect to input
-    eps = 0.01  # deviation
+    eps = 0.01  # Small perturbation
+    n_x = 12  # Number of states
+    n_u = 4   # Number of control inputs
+    B = np.zeros((n_x, n_u))  # Initialize Jacobian matrix
 
-    ##### TODO #####
-    B = np.zeros((12, 4))
-    delta_vec = np.array([[delta.elevator], [delta.aileron], [delta.rudder], [delta.throttle]])
-    for i in range(12):
-        for j in range(4):
-            delta_vec_left = np.copy(delta_vec)
-            delta_vec_left[j, 0] -= eps
-            delta_left = MsgDelta(elevator=delta_vec_left.item(0),
-                                    aileron=delta_vec_left.item(1),
-                                    rudder=delta_vec_left.item(2),
-                                    throttle=delta_vec_left.item(3))
-            f_left = f_euler(mav, x_euler, delta_left)
-            delta_vec_right = np.copy(delta_vec)
-            delta_vec_right[j, 0] += eps
-            delta_right = MsgDelta(elevator=delta_vec_right.item(0),
-                                    aileron=delta_vec_right.item(1),
-                                    rudder=delta_vec_right.item(2),
-                                    throttle=delta_vec_right.item(3))
-            f_right = f_euler(mav, x_euler, delta_right)
-            B[i, j] = (f_right.item(i) - f_left.item(i)) / (2. * eps)
+    # Compute f_euler at the nominal input
+    f_euler0 = f_euler(mav, x_euler, delta)
+
+    # Loop over each control input to compute partial derivatives
+    for i, key in enumerate(["elevator", "aileron", "rudder", "throttle"]):
+        # **1. Create a perturbed control input (MsgDelta object)**
+        delta_perturbed = MsgDelta(
+            elevator=delta.elevator,
+            aileron=delta.aileron,
+            rudder=delta.rudder,
+            throttle=delta.throttle
+        )
+        setattr(delta_perturbed, key, getattr(delta, key) + eps)  # Perturb control input i
+
+        # **2. Compute f(x, u+eps)**
+        f_euler1 = f_euler(mav, x_euler, delta_perturbed)
+
+        # **3. Compute finite difference approximation**
+        B[:, i] = (f_euler1.flatten() - f_euler0.flatten()) / eps
+
     return B
 
 
@@ -253,10 +296,9 @@ def dT_dVa(mav, Va, delta_t):
     eps = 0.01
 
     ##### TODO #####
-    T_left, _ = mav._motor_thrust_torque(Va - eps, delta_t)
-    T_right, _ = mav._motor_thrust_torque(Va + eps, delta_t)
-    # use (second-order) central difference method
-    dT_dVa = (T_right - T_left) / (2. * eps)    
+    thrust1, torque1 = mav._motor_thrust_torque(Va, delta_t)
+    thrust2, torque2 = mav._motor_thrust_torque(Va+ eps, delta_t)
+    dT_dVa = (thrust2 - thrust1) / eps   
     return dT_dVa
 
 def dT_ddelta_t(mav, Va, delta_t):
@@ -264,34 +306,7 @@ def dT_ddelta_t(mav, Va, delta_t):
     eps = 0.01
 
     ##### TODO #####
-    T_left, _ = mav._motor_thrust_torque(Va, delta_t - eps)
-    T_right, _ = mav._motor_thrust_torque(Va, delta_t + eps)
-    # use (second-order) central difference method
-    dT_ddelta_t = (T_right - T_left) / (2. * eps)
+    thrust1, torque1 = mav._motor_thrust_torque(Va, delta_t)
+    thrust2, torque2 = mav._motor_thrust_torque(Va, delta_t + eps)
+    dT_ddelta_t = (thrust2 - thrust1) / eps
     return dT_ddelta_t
-
-def dxe_dxq(x_quat):
-    # Jacobian of x_euler wrt x_quat: 12x13
-    eps = 0.01
-    T = np.zeros((12, 13))
-    T[:6, :6] = np.eye(6)
-    # 4x3 matrix in the middle
-    for i in range(6, 9):
-        for j in range(6, 10):
-            quat_left = np.copy(x_quat)
-            quat_left[j, 0] -= eps
-            elr_state_left = euler_state(quat_left)
-            quat_right = np.copy(x_quat)
-            quat_right[j, 0] += eps
-            elr_state_right = euler_state(quat_right)
-            T[i, j] = ( elr_state_right.item(i) - elr_state_left.item(i) ) / (2. * eps) 
-    T[9:, 10:] = np.eye(3)
-    return T
-
-def convert_complex_conj_pair(lmbda, lmbda_star):
-    # convert (s + \lambda)*(s + \lambda*) to s^2 + 2 * icsi * w_n * s + w_n**2
-    # -> 2 * icsi * w_n = 2 * Re(\lambda)
-    # -> w_n**2 = \lambda * \lambda* = |\lambda|**2
-    w_n = np.real(np.sqrt(lmbda*lmbda_star))
-    icsi = np.real(np.real(lmbda) / w_n)
-    return icsi, w_n

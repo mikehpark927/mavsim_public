@@ -60,22 +60,31 @@ class MavDynamics(MavDynamicsForces):
         ##### TODO #####
         # convert steady-state wind vector from world to body frame
         R_wb = quaternion_to_rotation(self._state[6:10])
-
+        wind_body = R_wb.T @ steady_state
+        
+        # add the gust 
+        wind_body += gust
+        
         # convert total wind to world frame
-        self._wind = R_wb @ steady_state + gust
+        self._wind = R_wb @ wind_body
 
         # velocity vector relative to the airmass ([ur , vr, wr]= ?)
-        V = self._state[3:6]
-        Vr = V - self._wind
+        vel_body = np.array([[self._state.item(3), self._state.item(4), self._state.item(5)]]).T
+        vel_rel_airmass = vel_body - self._wind
         
         # compute airspeed (self._Va = ?)
-        self._Va = np.linalg.norm(Vr)
+        self._Va = np.linalg.norm(vel_rel_airmass)
 
         # compute angle of attack (self._alpha = ?)
-        self._alpha = np.arctan2(Vr.item(2), Vr.item(0))
+        ur, vr, wr = vel_rel_airmass
+        ur = ur[0]
+        vr = vr[0]
+        wr = wr[0]
 
+        self._alpha = np.arctan2(wr, ur)
+        
         # compute sideslip angle (self._beta = ?)
-        self._beta = np.arcsin(Vr.item(1)/self._Va)
+        self._beta = np.arcsin(vr / self._Va)
 
     def _forces_moments(self, delta):
         """
@@ -137,7 +146,7 @@ class MavDynamics(MavDynamicsForces):
         Fx = fb_grav.item(0) + thrust_prop + fx_fz.item(0)
         Fy = fb_grav.item(1) + fy
         Fz = fb_grav.item(2) + fx_fz.item(1)
-        Mx = Mx - torque_prop
+        Mx = Mx + torque_prop
 
         forces_moments = np.array([[Fx, Fy, Fz, Mx, My, Mz]]).T
         return forces_moments

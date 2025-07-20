@@ -16,9 +16,10 @@ def compute_trim(mav, Va, gamma):
     ##### TODO #####
     # set the initial conditions of the optimization
     e0 = euler_to_quaternion(0., gamma, 0.)
+    print(e0.item(0))
     state0 = np.array([[0],  # pn
                    [0],  # pe
-                   [-100],  # pd
+                   [0],  # pd
                    [Va],  # u
                    [0.], # v
                    [0.], # w
@@ -30,13 +31,10 @@ def compute_trim(mav, Va, gamma):
                    [0.], # q
                    [0.]  # r
                    ])
-    mav._state = state0
-    mav._update_velocity_data()
-    mav._update_true_state()
     delta0 = np.array([[0],  # elevator
-                       [0],  # aileron
-                       [0],  # rudder
-                       [0.5]]) # throttle
+                    [0],  # aileron
+                    [0],  # rudder
+                    [0]]) # throttle
     x0 = np.concatenate((state0, delta0), axis=0).flatten()
     # define equality constraints
     cons = ({'type': 'eq',
@@ -82,30 +80,29 @@ def trim_objective_fun(x, mav, Va, gamma):
     ##### TODO #####
     # objective function to be minimized
     state = x[:13]
-    inp = x[13:]
-    ##### TODO #####
-    # UPDATE mav._state so that forces and moments calculations are correct
-    mav._state = state.reshape((13, 1))
+    delta = MsgDelta(elevator=x.item(13),
+                    aileron=x.item(14),
+                    rudder=x.item(15),
+                    throttle=x.item(16))
+    desired_trim_state_dot = np.array([
+                            [0.],  # pn
+                            [0.],  # pe
+                            [-Va * np.sin(gamma)],  # pd
+                            [0.],  # u
+                            [0.], # v
+                            [0.], # w
+                            [0.],  # e0
+                            [1],  # e1
+                            [0.],  # e2
+                            [0.],  # e3
+                            [0.], # p
+                            [0.], # q
+                            [0.]  # r
+                            ])
+    mav._state = state
     mav._update_velocity_data()
-    x_star_dot = np.array([[0],  # pn_dot, don't care
-                   [0],  # pe_dot, don't care
-                   [Va * np.sin(gamma)],  # pd_dot
-                   [0],  # u_dot
-                   [0.], # v_dot
-                   [0.], # w_dot
-                   [0.], # e0_dot
-                   [0.], # e1_dot
-                   [0.], # e2_dot
-                   [0.], # e3_dot
-                   [0.], # p_dot
-                   [0.], # q_dot
-                   [0.]  # r_dot
-                   ])
-    # "f" in this context comes from mav._derivatives method
-    delta = MsgDelta(elevator=inp[0],
-                     aileron=inp[1],
-                     rudder=inp[2],
-                     throttle=inp[3])
-    f_x_u = mav._f(state, mav._forces_moments(delta))
-    J = np.linalg.norm(x_star_dot[2:] - f_x_u[2:])**2
+    forces_moments = mav._forces_moments(delta)
+    f = mav._f(state, forces_moments)
+    tmp = desired_trim_state_dot - f
+    J = np.linalg.norm(tmp[2:13])**2
     return J
